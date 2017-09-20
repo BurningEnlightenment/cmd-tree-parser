@@ -11,9 +11,7 @@
 #
 ########################################################################
 
-add_mingw_unicode_flags()
-
-set(_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/include")
+set(_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/include/ucmd-parser")
 
 add_executable(cmd_parser-tests
     cmd_parser-tests.cpp
@@ -23,6 +21,8 @@ add_executable(cmd_parser-tests
 	
 	# src files for vs ide support
 	"${_INCLUDE_DIR}/command_parser.hpp"
+    "${_INCLUDE_DIR}/number_serializer.hpp"
+    "${_INCLUDE_DIR}/serializer.hpp"
 )
 target_link_libraries(cmd_parser-tests
     PUBLIC

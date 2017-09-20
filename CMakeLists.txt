@@ -11,7 +11,7 @@
 #
 ########################################################################
 cmake_minimum_required(VERSION 3.9)
-project(sexpr-cpp VERSION 0.0.0)
+project(command_parser VERSION 0.0.0)
 
 if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
 	message(FATAL_ERROR "in-source builds are not supported!")
