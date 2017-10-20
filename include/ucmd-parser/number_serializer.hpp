@@ -5,28 +5,34 @@
 //
 #pragma once
 
-#include <cerrno>    
+#include <cerrno>
+#include <cstddef>
 #include <cstdlib>
+#include <memory.h>
+#include <malloc.h>
 
 #include <memory>
 #include <limits>
 #include <type_traits>
 #include <stdexcept>
-#include <string_view> 
+#include <string_view>
 
 #include <boost/config.hpp>
 
+#include "exceptions.hpp"
 #include "serializer.hpp"
 
 namespace ucmdp::detail
 {
-    
+
 
 template< typename T, T(*rdrFunc)(const char *, char **, int) >
-struct integer_serializer
+struct integer_serializer_base
 {
-    static_assert(std::numeric_limits<T>::is_integer,
-        "integer_serializer is only meaningful for integer types");
+    static_assert(std::is_integral_v<T>,
+        "integer_serializer_base is only meaningful for integer types");
+
+    using argument_type = T;
 
     static constexpr std::size_t max_stack_alloc = 72;
 
@@ -35,7 +41,9 @@ struct integer_serializer
     {
         if (str.empty())
         {
-            throw "expected integer, but got an empty string";
+            BOOST_THROW_EXCEPTION(
+                empty_argument_error{}
+            );
         }
         std::unique_ptr<char[]> mem_holder;
         if (str.back() != '\0')
@@ -61,46 +69,56 @@ struct integer_serializer
         {
             if (tmp == std::numeric_limits<T>::max())
             {
-                throw "integer overflow";
+                BOOST_THROW_EXCEPTION(
+                    integer_overflow_serialization_error{}
+                );
             }
             if (tmp == std::numeric_limits<T>::min())
             {
-                throw "integer underflow";
+                BOOST_THROW_EXCEPTION(
+                    integer_underflow_serialization_error{}
+                );
             }
-            throw "undefined erange failure";
+            BOOST_THROW_EXCEPTION(
+                integer_serialization_error{}
+            );
         }
         if (str.data() + str.size() != end)
         {
-            throw "couldn't convert a string to an integer type";
+            BOOST_THROW_EXCEPTION(
+                invalid_integer_error{}
+            );
         }
         dest = tmp;
     }
 
 protected:
-    constexpr explicit integer_serializer(int base)
+    constexpr explicit integer_serializer_base(int base = 0)
         : base(base)
     {
         if (base != 0 && (base < 2 || base > 36))
         {
-            throw std::invalid_argument("base is neither 0 nor in the interval [2, 36]");
+            BOOST_THROW_EXCEPTION(
+                std::invalid_argument("base is neither 0 nor in the interval [2, 36]")
+            );
         }
     }
-    ~integer_serializer() = default;
+    ~integer_serializer_base() = default;
 
 private:
     const int base;
 };
 
-using longlong_serializer = integer_serializer<long long, strtoll>;
-using long_serializer = integer_serializer<long, strtol>;
-using ulonglong_serializer = integer_serializer<unsigned long long, strtoull>;
-using ulong_serializer = integer_serializer<unsigned long, strtoul>;
+using longlong_serializer = integer_serializer_base<long long, strtoll>;
+using long_serializer = integer_serializer_base<long, strtol>;
+using ulonglong_serializer = integer_serializer_base<unsigned long long, strtoull>;
+using ulong_serializer = integer_serializer_base<unsigned long, strtoul>;
 
 template< typename T >
 struct small_integer_serializer
     : private std::conditional_t< std::is_signed_v<T>
-    , long_serializer
-    , ulong_serializer
+        , long_serializer
+        , ulong_serializer
     >
 {
 private:
@@ -112,7 +130,7 @@ private:
 public:
     using argument_type = T;
 
-    constexpr explicit small_integer_serializer(int base)
+    constexpr explicit small_integer_serializer(int base = 0)
         : base_t(base)
     {
     }
@@ -123,13 +141,16 @@ public:
         base_t::deserialize(str, tmp);
         if (tmp > std::numeric_limits<T>::max())
         {
-            //TODO: throw appropriate exception
-            throw "small int overflow";
+            BOOST_THROW_EXCEPTION(
+                integer_overflow_serialization_error{}
+            );
         }
         if (std::is_signed<T>::value
             && tmp < std::numeric_limits<T>::min())
         {
-            throw "small int underflow";
+            BOOST_THROW_EXCEPTION(
+                integer_underflow_serialization_error{}
+            );
         }
         dest = static_cast<T>(tmp);
     }
@@ -137,10 +158,10 @@ public:
 
 
 template< typename T, T(*rdrFunc)(const char *, char**) >
-struct floating_point_serializer
+struct floating_point_serializer_base
 {
-    static_assert(std::numeric_limits<T>::is_iec559,
-        "floating_point_serializer is only meaningful for floating point types");
+    static_assert(std::is_floating_point_v<T>,
+        "floating_point_serializer_base is only meaningful for floating point types");
 
     static constexpr std::size_t max_stack_alloc = 72;
 
@@ -148,7 +169,9 @@ struct floating_point_serializer
     {
         if (str.empty())
         {
-            throw "expected integer, but got an empty string";
+            BOOST_THROW_EXCEPTION(
+                empty_argument_error{}
+            );
         }
         std::unique_ptr<char[]> mem_holder;
         if (str.back() != '\0')
@@ -174,24 +197,30 @@ struct floating_point_serializer
         {
             if (tmp == std::numeric_limits<T>::infinity())
             {
-                throw "floating point positive overflow";
+                BOOST_THROW_EXCEPTION(
+                    floating_point_overflow_serialization_error{}
+                );
             }
             if (tmp == -std::numeric_limits<T>::infinity())
             {
-                throw "floating point negative overflow";
+                BOOST_THROW_EXCEPTION(
+                    floating_point_underflow_serialization_error{}
+                );
             }
             // value underflow
         }
         if (str.data() + str.size() != end)
         {
-            throw "couldn't convert a string to a floating point type";
+            BOOST_THROW_EXCEPTION(
+                invalid_floating_point_error{}
+            );
         }
         dest = tmp;
     }
 
 protected:
-    constexpr floating_point_serializer() = default;
-    ~floating_point_serializer() = default;
+    constexpr floating_point_serializer_base() = default;
+    ~floating_point_serializer_base() = default;
 };
 
 
@@ -199,9 +228,93 @@ protected:
 
 namespace ucmdp
 {
-    
+
+template< >
+struct serialization_traits<long long>
+    : private detail::longlong_serializer
+{
+    using detail::longlong_serializer::deserialize;
+};
+template< >
+struct serialization_traits<unsigned long long>
+    : private detail::ulonglong_serializer
+{
+    using detail::ulonglong_serializer::deserialize;
+};
+
+template< >
+struct serialization_traits<long>
+    : private detail::long_serializer
+{
+    using detail::long_serializer::deserialize;
+};
+template< >
+struct serialization_traits<unsigned long>
+    : private detail::ulong_serializer
+{
+    using detail::ulong_serializer::deserialize;
+};
+
+template< >
+struct serialization_traits<int>
+    : private detail::small_integer_serializer<int>
+{
+    using detail::small_integer_serializer<int>::deserialize;
+};
+template< >
+struct serialization_traits<unsigned int>
+    : private detail::small_integer_serializer<unsigned int>
+{
+    using detail::small_integer_serializer<unsigned int>::deserialize;
+};
+
+template< >
+struct serialization_traits<std::byte>
+{
+private:
+    using number_type = std::underlying_type_t<std::byte>;
+    using impl_type = detail::small_integer_serializer<number_type>;
+
+public:
+    void deserialize(std::string_view str, std::byte &out)
+    {
+        number_type tmp;
+        if (str.size() > 2 && str[0] == '0' && str[1] == 'b')
+        {
+            mBinSerializer.deserialize(str, tmp);
+        }
+        else
+        {
+            mStdSerializer.deserialize(str, tmp);
+        }
+        out = std::byte{tmp};
+    }
+
+private:
+    impl_type mStdSerializer = impl_type(0);
+    impl_type mBinSerializer = impl_type(2);
+};
 
 
+template< >
+struct serialization_traits<long double>
+    : private detail::floating_point_serializer_base<long double, &strtold>
+{
+    using detail::floating_point_serializer_base<long double, &strtold>::deserialize;
+};
 
+template< >
+struct serialization_traits<double>
+    : private detail::floating_point_serializer_base<double, &strtod>
+{
+    using detail::floating_point_serializer_base<double, &strtod>::deserialize;
+};
+
+template< >
+struct serialization_traits<float>
+    : private detail::floating_point_serializer_base<float, &strtof>
+{
+    using detail::floating_point_serializer_base<float, &strtof>::deserialize;
+};
 
 }

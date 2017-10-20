@@ -110,8 +110,39 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
 
 ########################################################################
-add_library(cmd_parser INTERFACE)
-target_include_directories(cmd_parser INTERFACE include)
+add_library(cmd-tree-parser INTERFACE)
+target_include_directories(cmd-tree-parser
+    INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+)
 
 enable_testing()
 add_subdirectory(tests)
+
+########################################################################
+# install target + meta data
+
+install(TARGETS cmd-tree-parser EXPORT cmd-tree-parser-targets
+    INCLUDES DESTINATION include
+)
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/include" DESTINATION .)
+install(EXPORT cmd-tree-parser-targets DESTINATION cmake)
+
+configure_file(cmake/cmd-tree-parser-config.cmake
+    "${CMAKE_CURRENT_BINARY_DIR}/cmd-tree-parser-config.cmake"
+    COPYONLY
+)
+
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/cmd-tree-parser-config-version.cmake"
+    VERSION ${COMMAND_PARSER_VERSION}
+    COMPATIBILITY ExactVersion
+)
+
+install(FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/cmd-tree-parser-config.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/cmd-tree-parser-config-version.cmake"
+    DESTINATION cmake
+)
